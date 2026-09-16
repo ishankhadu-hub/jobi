@@ -1,0 +1,8 @@
+-- Seed data applied by `supabase db reset`.
+--
+-- We intentionally DON'T seed auth users here: real users must be created
+-- through Supabase Auth (signup / magic link) so passwords and identities are
+-- valid. The RLS isolation test (tests/rls-isolation) creates its own throwaway
+-- users via public.create_test_user() and cleans up by dropping the DB.
+--
+-- Add reference/lookup data below if you introduce any.
