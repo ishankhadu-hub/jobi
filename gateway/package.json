@@ -1,0 +1,10 @@
+{
+  "name": "@jobi/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "description": "LLM gateway — the single network boundary for LLM calls (mock/live/fallback).",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}

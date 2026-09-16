@@ -1,0 +1,49 @@
+# ---------------------------------------------------------------------------
+# SECRETS — never commit real credentials.
+# .env holds every real key. .env.example is the committed, blank template.
+# ---------------------------------------------------------------------------
+.env
+.env.*
+!.env.example
+app/.env
+app/.env.*
+!app/.env.example
+
+# Local mock storage (uploads written to disk while MOCK_MODE=true)
+/.data/
+**/.data/
+storage/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Expo / React Native
+app/.expo/
+app/dist/
+app/web-build/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+
+# Supabase local stack
+supabase/.branches/
+supabase/.temp/
+
+# Build output / docx exports produced at runtime
+*.docx
+!docs/**/*.docx
+out/
+build/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.log
