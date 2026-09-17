@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "Jobi",
+    "slug": "jobi",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "jobi",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#0B1220"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.jobi.app"
+    },
+    "android": {
+      "package": "com.jobi.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B1220"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "REPLACE_WITH_EAS_PROJECT_ID"
+      }
+    }
+  }
+}
