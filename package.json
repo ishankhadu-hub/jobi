@@ -8,7 +8,10 @@
     "orchestrator": "node orchestrator-dev/server.js",
     "dev": "node scripts/dev.js",
     "smoke": "node tests/agent-smoke/smoke.mjs",
+    "test:paddle": "node tests/paddle/webhook.test.mjs",
     "test:rls": "node tests/rls-isolation/run.mjs",
+    "test:rls:docker": "bash tests/rls-isolation/docker-run.sh",
+    "test": "node tests/agent-smoke/smoke.mjs && node tests/paddle/webhook.test.mjs",
     "check:config": "node -e \"const{config,validateForLive}=require('./shared/config');console.log('mock_mode=',config.MOCK_MODE,'env=',config.env.APP_ENV);console.log('live problems:',validateForLive())\""
   },
   "engines": {
