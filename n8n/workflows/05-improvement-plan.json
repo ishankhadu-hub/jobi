@@ -1,0 +1,391 @@
+{
+  "name": "05 — Compile improvement plan",
+  "nodes": [
+    {
+      "id": "n47",
+      "name": "note 47",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -360,
+        -200
+      ],
+      "parameters": {
+        "content": "STEP 6\nPOST /webhook/interview/plan\nBody: { sessionId }\nCompiles all scores (+ flagged resume gaps) into a plan.",
+        "width": 320,
+        "height": 160
+      }
+    },
+    {
+      "id": "n48",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -360,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "interview/plan",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "n49",
+      "name": "Resolve user",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -140,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/auth/v1/user",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.authorization }}"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n50",
+      "name": "Read body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        0
+      ],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "\nconst b = $('Webhook').first().json.body || {};\nreturn [{ json: { userId: $json.id, sessionId: b.sessionId } }];"
+      }
+    },
+    {
+      "id": "n51",
+      "name": "Get session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/interview_sessions?id=eq.{{ $json.sessionId }}&user_id=eq.{{ $json.userId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n52",
+      "name": "Get JD",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        -120
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/job_descriptions?id=eq.{{ $json[0].job_description_id }}&user_id=eq.{{ $('Read body').first().json.userId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n53",
+      "name": "Get scores",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        120
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/scores?session_id=eq.{{ $('Read body').first().json.sessionId }}&user_id=eq.{{ $('Read body').first().json.userId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n54",
+      "name": "Get tailored (gaps)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        740,
+        120
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/tailored_resumes?job_description_id=eq.{{ $('Get session').first().json[0].job_description_id }}&user_id=eq.{{ $('Read body').first().json.userId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n55",
+      "name": "LLM: improvement_plan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.GATEWAY_URL }}/agent/improvement_plan",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-internal-token",
+              "value": "={{ $env.GATEWAY_INTERNAL_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  role: $('Get JD').first().json[0].role_title,\n  company: $('Get JD').first().json[0].company,\n  scores: ($('Get scores').first().json || []).map(s => ({ score: s.score, improvements: s.improvements })),\n  gaps: ($('Get tailored (gaps)').first().json[0] || {}).gaps || []\n}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n56",
+      "name": "Store plan",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1180,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/improvement_plans?on_conflict=session_id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation,resolution=merge-duplicates"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  user_id: $('Read body').first().json.userId,\n  session_id: $('Read body').first().json.sessionId,\n  overall_score: $json.data.overall_score, readiness: $json.data.readiness, summary: $json.data.summary,\n  practise: $json.data.practise || [], answers_to_rework: $json.data.answers_to_rework || [],\n  gaps_to_address: $json.data.gaps_to_address || [], next_step: $json.data.next_step\n}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n57",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1400,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseBody": "={{ JSON.stringify({ improvement_plan: $json[0] }) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Resolve user",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve user": {
+      "main": [
+        [
+          {
+            "node": "Read body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read body": {
+      "main": [
+        [
+          {
+            "node": "Get session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get session": {
+      "main": [
+        [
+          {
+            "node": "Get JD",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get scores",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get scores": {
+      "main": [
+        [
+          {
+            "node": "Get tailored (gaps)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get JD": {
+      "main": [
+        [
+          {
+            "node": "LLM: improvement_plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get tailored (gaps)": {
+      "main": [
+        [
+          {
+            "node": "LLM: improvement_plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM: improvement_plan": {
+      "main": [
+        [
+          {
+            "node": "Store plan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store plan": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateId": "jobi",
+    "description": "05 — Compile improvement plan"
+  }
+}

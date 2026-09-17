@@ -1,0 +1,357 @@
+{
+  "name": "01 — Parse JD & extract competencies",
+  "nodes": [
+    {
+      "id": "n1",
+      "name": "note 1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -360,
+        -200
+      ],
+      "parameters": {
+        "content": "STEP 2\nPOST /webhook/parse-jd\nBody: { jobDescription }\nCaches by sha256(jobDescription) per user so re-runs never re-spend.",
+        "width": 320,
+        "height": 160
+      }
+    },
+    {
+      "id": "n2",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -360,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "parse-jd",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "n3",
+      "name": "Resolve user",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -140,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/auth/v1/user",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.authorization }}"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n4",
+      "name": "Prep + hash",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        0
+      ],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "\nconst body = $('Webhook').first().json.body || {};\nconst userId = $json.id;\nconst jd = String(body.jobDescription || '');\nconst crypto = require('crypto');\nconst hash = crypto.createHash('sha256').update(jd.replace(/\\s+/g,' ').trim().toLowerCase()).digest('hex');\nreturn [{ json: { userId, jobDescription: jd, content_hash: hash } }];"
+      }
+    },
+    {
+      "id": "n5",
+      "name": "Cache lookup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/job_descriptions?user_id=eq.{{ $json.userId }}&content_hash=eq.{{ $json.content_hash }}&parsed_at=not.is.null",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n6",
+      "name": "Cache hit?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "leftValue": "={{ $json.length || 0 }}",
+              "rightValue": "={{ 0 }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "n7",
+      "name": "Respond (cached)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        760,
+        -120
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseBody": "={{ JSON.stringify({ job_description: $json[0], cached: true }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n8",
+      "name": "LLM: parse_jd",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        760,
+        120
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.GATEWAY_URL }}/agent/parse_jd",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-internal-token",
+              "value": "={{ $env.GATEWAY_INTERNAL_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ jobDescription: $('Prep + hash').first().json.jobDescription }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n9",
+      "name": "Shape JD row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        980,
+        120
+      ],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "\nconst d = $json.data;\nconst p = $('Prep + hash').first().json;\nreturn [{ json: {\n  user_id: p.userId, raw_text: p.jobDescription, content_hash: p.content_hash,\n  role_title: d.role_title, company: d.company, seniority: d.seniority,\n  competencies: d.competencies || [], skills: d.skills || [], keywords: d.keywords || [],\n  summary: d.summary, parsed_at: new Date().toISOString(),\n} }];"
+      }
+    },
+    {
+      "id": "n10",
+      "name": "Upsert JD",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1200,
+        120
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/job_descriptions?on_conflict=user_id,content_hash",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation,resolution=merge-duplicates"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n11",
+      "name": "Respond (fresh)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1420,
+        120
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseBody": "={{ JSON.stringify({ job_description: $json[0], cached: false }) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Resolve user",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve user": {
+      "main": [
+        [
+          {
+            "node": "Prep + hash",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep + hash": {
+      "main": [
+        [
+          {
+            "node": "Cache lookup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cache lookup": {
+      "main": [
+        [
+          {
+            "node": "Cache hit?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cache hit?": {
+      "main": [
+        [
+          {
+            "node": "Respond (cached)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "LLM: parse_jd",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM: parse_jd": {
+      "main": [
+        [
+          {
+            "node": "Shape JD row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape JD row": {
+      "main": [
+        [
+          {
+            "node": "Upsert JD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert JD": {
+      "main": [
+        [
+          {
+            "node": "Respond (fresh)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateId": "jobi",
+    "description": "01 — Parse JD & extract competencies"
+  }
+}

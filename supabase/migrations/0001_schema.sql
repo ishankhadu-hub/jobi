@@ -186,7 +186,8 @@ create table if not exists public.improvement_plans (
   answers_to_rework jsonb not null default '[]'::jsonb,
   gaps_to_address   jsonb not null default '[]'::jsonb,
   next_step         text,
-  created_at        timestamptz not null default now()
+  created_at        timestamptz not null default now(),
+  unique (session_id)   -- one plan per session (enables upsert on session_id)
 );
 create index if not exists plans_user_idx on public.improvement_plans(user_id);
 

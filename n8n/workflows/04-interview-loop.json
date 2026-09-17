@@ -1,0 +1,525 @@
+{
+  "name": "04 — Mock interview loop (stateful)",
+  "nodes": [
+    {
+      "id": "n32",
+      "name": "note 32",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -380,
+        -260
+      ],
+      "parameters": {
+        "content": "STEP 5\nPOST /webhook/interview/answer\nBody: { sessionId, answer, audioUrl? }\nScores the answer, then DECIDES: probe deeper (adaptive follow-up)\nor advance. Session state lives in interview_sessions.state.\n\nVOICE SEAM: STT fills `answer` inbound; response.voice.speak is what TTS reads.",
+        "width": 380,
+        "height": 200
+      }
+    },
+    {
+      "id": "n33",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -380,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "interview/answer",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "n34",
+      "name": "Resolve user",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -160,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/auth/v1/user",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.authorization }}"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n35",
+      "name": "Read body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        60,
+        0
+      ],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "\nconst b = $('Webhook').first().json.body || {};\nreturn [{ json: { userId: $json.id, sessionId: b.sessionId, answer: b.answer, audioUrl: b.audioUrl || null } }];"
+      }
+    },
+    {
+      "id": "n36",
+      "name": "Get session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        280,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/interview_sessions?id=eq.{{ $json.sessionId }}&user_id=eq.{{ $json.userId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n37",
+      "name": "Get JD",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        500,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/job_descriptions?id=eq.{{ $json[0].job_description_id }}&user_id=eq.{{ $('Read body').first().json.userId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n38",
+      "name": "Resolve current question",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        0
+      ],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "\nconst s = $('Get session').first().json[0];\nconst body = $('Read body').first().json;\nconst state = s.state || { priorAnswers: [], pendingFollowUp: null, followUpsForCurrent: 0, askedCount: 0 };\nconst qIds = s.question_ids || [];\n// The current question text is either a pending follow-up or the base question.\nreturn [{ json: { session: s, state, qIds, currentIndex: s.current_index || 0, isFollowUp: !!state.pendingFollowUp,\n  baseQuestionId: qIds[s.current_index || 0] || null, currentText: state.pendingFollowUp || null,\n  answer: body.answer, audioUrl: body.audioUrl, userId: body.userId,\n  competencies: $json[0].competencies }}];"
+      }
+    },
+    {
+      "id": "n39",
+      "name": "Get base question",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        940,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/questions?id=eq.{{ $json.baseQuestionId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n40",
+      "name": "LLM: score_answer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1160,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.GATEWAY_URL }}/agent/score_answer",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-internal-token",
+              "value": "={{ $env.GATEWAY_INTERNAL_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  question: $('Resolve current question').first().json.currentText || ($json[0] ? $json[0].text : 'Tell me about yourself.'),\n  answer: $('Resolve current question').first().json.answer,\n  competencies: $('Resolve current question').first().json.competencies,\n  priorAnswers: $('Resolve current question').first().json.state.priorAnswers\n}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n41",
+      "name": "Store answer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1380,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/answers",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  user_id: $('Resolve current question').first().json.userId,\n  session_id: $('Resolve current question').first().json.session.id,\n  question_id: $('Resolve current question').first().json.isFollowUp ? null : $('Resolve current question').first().json.baseQuestionId,\n  question_text: $('Resolve current question').first().json.currentText || ($('Get base question').first().json[0] ? $('Get base question').first().json[0].text : 'Tell me about yourself.'),\n  answer_text: $('Resolve current question').first().json.answer,\n  is_follow_up: $('Resolve current question').first().json.isFollowUp,\n  audio_url: $('Resolve current question').first().json.audioUrl\n}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n42",
+      "name": "Store score",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1600,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/scores",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  user_id: $('Resolve current question').first().json.userId,\n  session_id: $('Resolve current question').first().json.session.id,\n  answer_id: $json[0].id,\n  score: $('LLM: score_answer').first().json.data.score,\n  competencies_assessed: $('LLM: score_answer').first().json.data.competencies_assessed || [],\n  strengths: $('LLM: score_answer').first().json.data.strengths || [],\n  improvements: $('LLM: score_answer').first().json.data.improvements || [],\n  rewrite_hint: $('LLM: score_answer').first().json.data.rewrite_hint,\n  follow_up: $('LLM: score_answer').first().json.data.follow_up,\n  next_action: $('LLM: score_answer').first().json.data.next_action\n}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n43",
+      "name": "Decide next + update state",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1820,
+        0
+      ],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "\nconst rq = $('Resolve current question').first().json;\nconst sc = $('LLM: score_answer').first().json.data;\nconst MAX_Q = Number($env.INTERVIEW_MAX_QUESTIONS || 6);\nconst MAX_FU = Number($env.INTERVIEW_MAX_FOLLOWUPS || 1);\nconst state = rq.state; const qIds = rq.qIds;\nstate.priorAnswers = [...(state.priorAnswers||[]), { question: rq.currentText, answer: rq.answer, score: sc.score }];\nstate.askedCount = (state.askedCount||0) + 1;\nlet done = false, next = null, nextIndex = rq.currentIndex;\nconst canFollow = sc.next_action === 'probe_deeper' && (state.followUpsForCurrent||0) < MAX_FU && state.askedCount < MAX_Q;\nif (canFollow) { state.pendingFollowUp = sc.follow_up; state.followUpsForCurrent = (state.followUpsForCurrent||0)+1;\n  next = { text: sc.follow_up, is_follow_up: true };\n} else { state.pendingFollowUp = null; state.followUpsForCurrent = 0; nextIndex = rq.currentIndex + 1;\n  if (nextIndex >= qIds.length || state.askedCount >= MAX_Q) done = true;\n}\nreturn [{ json: { patch: { state, current_index: nextIndex, status: done ? 'completed':'active',\n  completed_at: done ? new Date().toISOString() : null }, sessionId: rq.session.id, userId: rq.userId,\n  nextIndex, next, done, score: sc } }];"
+      }
+    },
+    {
+      "id": "n44",
+      "name": "Update session",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2040,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/interview_sessions?on_conflict=id",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation,resolution=merge-duplicates"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify(Object.assign({ id: $json.sessionId, user_id: $json.userId }, $json.patch)) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n45",
+      "name": "Get next question",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2260,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/questions?id=eq.{{ $('Decide next + update state').first().json.qIds ? $('Decide next + update state').first().json.nextIndex : 0 }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n46",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2480,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseBody": "={{ JSON.stringify({\n  score: {\n    value: $('Decide next + update state').first().json.score.score,\n    strengths: $('Decide next + update state').first().json.score.strengths,\n    improvements: $('Decide next + update state').first().json.score.improvements,\n    rewrite_hint: $('Decide next + update state').first().json.score.rewrite_hint\n  },\n  next_question: $('Decide next + update state').first().json.next,\n  done: $('Decide next + update state').first().json.done,\n  voice: { speak: ($('Decide next + update state').first().json.next || {}).text || 'That completes the interview.' }\n}) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Resolve user",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve user": {
+      "main": [
+        [
+          {
+            "node": "Read body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read body": {
+      "main": [
+        [
+          {
+            "node": "Get session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get session": {
+      "main": [
+        [
+          {
+            "node": "Get JD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get JD": {
+      "main": [
+        [
+          {
+            "node": "Resolve current question",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve current question": {
+      "main": [
+        [
+          {
+            "node": "Get base question",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get base question": {
+      "main": [
+        [
+          {
+            "node": "LLM: score_answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM: score_answer": {
+      "main": [
+        [
+          {
+            "node": "Store answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store answer": {
+      "main": [
+        [
+          {
+            "node": "Store score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store score": {
+      "main": [
+        [
+          {
+            "node": "Decide next + update state",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decide next + update state": {
+      "main": [
+        [
+          {
+            "node": "Update session",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update session": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateId": "jobi",
+    "description": "04 — Mock interview loop (stateful)"
+  }
+}

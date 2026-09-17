@@ -51,7 +51,7 @@ function extractSkills(text) {
 }
 
 function guessRole(jd) {
-  const ROLE = '([A-Z][\\w/+-]*(?:\\s+[A-Za-z][\\w/+-]*){0,4})';
+  const ROLE = '([A-Z][\\w/+-]*(?:[ \\t]+[A-Za-z][\\w/+-]*){0,4})';
   const m =
     String(jd).match(new RegExp('^\\s*' + ROLE + '(?:\\n| at | -| –)')) ||
     String(jd).match(new RegExp('(?:hiring|seeking|looking for)\\s+(?:an?\\s+)?' + ROLE)) ||
@@ -62,11 +62,12 @@ function guessRole(jd) {
   return role;
 }
 function guessCompany(jd) {
-  const CO = '([A-Z][A-Za-z0-9&]+(?:\\s+[A-Z][A-Za-z0-9&]+){0,3})';
+  // Inner word separators are spaces/tabs only, so a match never crosses a newline.
+  const CO = '([A-Z][A-Za-z0-9&]+(?:[ \\t]+[A-Z][A-Za-z0-9&]+){0,3})';
   const m =
-    String(jd).match(new RegExp('\\bat\\s+' + CO)) ||
-    String(jd).match(new RegExp(CO + '\\s+is\\s+(?:hiring|looking|seeking)'));
-  return (m && m[1] ? m[1] : 'the company').trim().replace(/[.,]$/, '');
+    String(jd).match(new RegExp('\\bat[ \\t]+' + CO)) ||
+    String(jd).match(new RegExp(CO + '[ \\t]+is[ \\t]+(?:hiring|looking|seeking)'));
+  return (m && m[1] ? m[1] : 'the company').split(/[\r\n]/)[0].trim().replace(/[.,]$/, '');
 }
 
 // Split a resume into "experience lines" we can reorder/reword (never invent).
