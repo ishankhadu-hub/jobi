@@ -1,0 +1,400 @@
+{
+  "name": "02 — Tailor resume & cover letter",
+  "nodes": [
+    {
+      "id": "n12",
+      "name": "note 12",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -360,
+        -220
+      ],
+      "parameters": {
+        "content": "STEP 3\nPOST /webhook/tailor\nBody: { resumeId, jobDescriptionId }\nTailor (no fabrication; gaps flagged) → cover letter. Two chained LLM calls.",
+        "width": 320,
+        "height": 160
+      }
+    },
+    {
+      "id": "n13",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -360,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "tailor",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "n14",
+      "name": "Resolve user",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -140,
+        0
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/auth/v1/user",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "={{ $json.headers.authorization }}"
+            },
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_ANON_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n15",
+      "name": "Read body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        80,
+        0
+      ],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "\nconst b = $('Webhook').first().json.body || {};\nreturn [{ json: { userId: $json.id, resumeId: b.resumeId, jobDescriptionId: b.jobDescriptionId } }];"
+      }
+    },
+    {
+      "id": "n16",
+      "name": "Get resume",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        -80
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/resumes?id=eq.{{ $json.resumeId }}&user_id=eq.{{ $json.userId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n17",
+      "name": "Get JD",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        300,
+        120
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/job_descriptions?id=eq.{{ $('Read body').first().json.jobDescriptionId }}&user_id=eq.{{ $('Read body').first().json.userId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "n18",
+      "name": "LLM: tailor_resume",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        520,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.GATEWAY_URL }}/agent/tailor_resume",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-internal-token",
+              "value": "={{ $env.GATEWAY_INTERNAL_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  resume: $('Get resume').first().json[0].content,\n  competencies: $('Get JD').first().json[0].competencies,\n  role: $('Get JD').first().json[0].role_title,\n  company: $('Get JD').first().json[0].company\n}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n19",
+      "name": "Store tailored",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        740,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/tailored_resumes",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  user_id: $('Read body').first().json.userId,\n  resume_id: $('Read body').first().json.resumeId,\n  job_description_id: $('Read body').first().json.jobDescriptionId,\n  headline: $json.data.headline, summary: $json.data.summary,\n  bullets: $json.data.bullets || [], gaps: $json.data.gaps || [],\n  fabrication_check: $json.data.fabrication_check\n}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n20",
+      "name": "LLM: cover_letter",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        960,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.GATEWAY_URL }}/agent/cover_letter",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-internal-token",
+              "value": "={{ $env.GATEWAY_INTERNAL_TOKEN }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  resume: $('Get resume').first().json[0].content,\n  competencies: $('Get JD').first().json[0].competencies,\n  role: $('Get JD').first().json[0].role_title,\n  company: $('Get JD').first().json[0].company,\n  tailoredBullets: $('LLM: tailor_resume').first().json.data.bullets\n}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n21",
+      "name": "Store cover",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1180,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.SUPABASE_URL }}/rest/v1/cover_letters",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "={{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.SUPABASE_SERVICE_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  user_id: $('Read body').first().json.userId,\n  job_description_id: $('Read body').first().json.jobDescriptionId,\n  tailored_resume_id: $('Store tailored').first().json[0].id,\n  subject: $json.data.subject, body: $json.data.body, tone: $json.data.tone\n}) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "n22",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1400,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseBody": "={{ JSON.stringify({\n  tailored_resume: $('Store tailored').first().json[0],\n  cover_letter: $json[0]\n}) }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Resolve user",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve user": {
+      "main": [
+        [
+          {
+            "node": "Read body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read body": {
+      "main": [
+        [
+          {
+            "node": "Get resume",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get resume": {
+      "main": [
+        [
+          {
+            "node": "Get JD",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get JD": {
+      "main": [
+        [
+          {
+            "node": "LLM: tailor_resume",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM: tailor_resume": {
+      "main": [
+        [
+          {
+            "node": "Store tailored",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store tailored": {
+      "main": [
+        [
+          {
+            "node": "LLM: cover_letter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM: cover_letter": {
+      "main": [
+        [
+          {
+            "node": "Store cover",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Store cover": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "templateId": "jobi",
+    "description": "02 — Tailor resume & cover letter"
+  }
+}

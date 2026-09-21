@@ -1,0 +1,10 @@
+{
+  "name": "@jobi/orchestrator-dev",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local n8n stand-in: same /webhook/* contract, runs the chained agent with no n8n (and, in mock mode, no Supabase).",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  }
+}
